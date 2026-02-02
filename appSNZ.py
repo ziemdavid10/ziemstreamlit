@@ -172,6 +172,14 @@ def main():
             st.pyplot(fig3)
 
     elif choice == '🤖 AI Prediction':
+        # Chargement du modèle
+        try:
+            model = pickle.load(open('brfSNZ.pkl', 'rb'))
+            st.success("Modèle brfSNZ.pkl chargé avec succès")
+        except FileNotFoundError:
+            st.error("Modèle brfSNZ.pkl introuvable")
+            return
+        
         tab1, tab2 = st.tabs(["⚡ Prediction Manuelle", "📁 Batch Prediction (CSV)"])
 
         with tab1:
@@ -181,37 +189,84 @@ def main():
             c1, c2, c3 = st.columns(3)
             with c1:
                 followers = st.number_input('Abonnés', 0, 10000000, 50000)
-                hour = st.slider('Heure de post', 0, 23, 12)
-            with c2:
                 likes = st.number_input('Likes attendus', 0, 1000000, 1000)
-                platform = st.selectbox('Plateforme', ['Facebook', 'Instagram', 'LinkedIn', 'TikTok', 'Twitter', 'YouTube'])
-            with c3:
                 shares = st.number_input('Partages', 0, 500000, 100)
-                content_type = st.radio('Type', ['Image', 'Video'])
-
-            # Calcul automatique du taux d'engagement pour l'exemple
-            engagement = (likes + shares) / (followers if followers > 0 else 1)
+            with c2:
+                comments = st.number_input('Commentaires', 0, 100000, 50)
+                engagement = st.slider('Taux d\'engagement', 0.0, 1.0, 0.05)
+                hour = st.slider('Heure de post', 0, 23, 12)
+            with c3:
+                platform = st.selectbox('Plateforme', ['Facebook', 'Instagram', 'LinkedIn', 'TikTok', 'Twitter', 'YouTube'])
+                content_type = st.radio('Type de contenu', ['Image', 'Video'])
             
             if st.button("Lancer la prédiction 🚀"):
-                # Simulation de l'input pour le modèle (doit matcher tes 13 features)
-                # Note: Il faut reconstruire l'array exactement comme dans ton code original
-                # [followers, likes, shares, comments, engagement, hour, FB, IG, LI, TT, TW, YT, Video]
+                # Préparation des features pour le modèle (13 features)
+                input_array = [
+                    followers,
+                    likes,
+                    shares,
+                    comments,
+                    engagement,
+                    hour,
+                    1 if platform == 'Facebook' else 0,
+                    1 if platform == 'Instagram' else 0,
+                    1 if platform == 'LinkedIn' else 0,
+                    1 if platform == 'TikTok' else 0,
+                    1 if platform == 'Twitter' else 0,
+                    1 if platform == 'YouTube' else 0,
+                    1 if content_type == 'Video' else 0
+                ]
                 
-                # ... (Logique de préparation de l'array input_data ici) ...
+                input_data = np.array([input_array])
+                
+                # Prédiction avec le modèle brfSNZ.pkl
+                prediction = model.predict(input_data)[0]
+                prediction_proba = model.predict_proba(input_data)[0]
                 
                 st.markdown("---")
-                # Affichage factice du résultat pour le design
-                is_viral_result = engagement > 0.1 # Exemple de règle
-                if is_viral_result:
+                
+                if prediction == 1:
                     st.markdown("<div class='prediction-viral'>🚀 POTENTIEL VIRAL DÉTECTÉ !</div>", unsafe_allow_html=True)
                 else:
                     st.markdown("<div class='prediction-not-viral'>📉 CONTENU STANDARD</div>", unsafe_allow_html=True)
+                
+                # Affichage des probabilités
+                col_prob1, col_prob2 = st.columns(2)
+                with col_prob1:
+                    st.metric("Probabilité Non-Viral", f"{prediction_proba[0]:.2%}")
+                with col_prob2:
+                    st.metric("Probabilité Viral", f"{prediction_proba[1]:.2%}")
             
             st.markdown("</div>", unsafe_allow_html=True)
 
         with tab2:
             st.info("Uploadez un fichier CSV pour prédire plusieurs lignes d'un coup.")
             upload_file = st.file_uploader("Choisir un fichier", type=["csv"])
+            
+            if upload_file:
+                df = load_data(upload_file)
+                st.write("Données uploadées:")
+                st.dataframe(df.head())
+                
+                if st.button("Prédire le batch"):
+                    # Encodage des données uploadées
+                    df_encoded = df.copy()
+                    categorical_cols = df_encoded.select_dtypes(include=['object']).columns
+                    
+                    for col in categorical_cols:
+                        if col != 'is_viral':
+                            dummies = pd.get_dummies(df_encoded[col], prefix=col)
+                            df_encoded = pd.concat([df_encoded, dummies], axis=1)
+                            df_encoded.drop(col, axis=1, inplace=True)
+                    
+                    # Prédiction
+                    prediction_data = df_encoded.select_dtypes(include=[np.number])
+                    predictions = model.predict(prediction_data.values)
+                    
+                    # Affichage des résultats
+                    df['Prediction'] = predictions
+                    df['Prediction'] = df['Prediction'].replace({0: 'Not Viral', 1: 'Viral'})
+                    st.dataframe(df)
 
 if __name__ == '__main__':
     main()
